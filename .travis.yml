@@ -13,7 +13,7 @@ before_install:
 - docker ps -a
 - sudo apt-get install -qq librdkafka1 librdkafka-dev libyajl-dev
 - wget https://github.com/edenhill/kafkacat/archive/1.2.0.tar.gz
-- tar -xzvf 1.2.0
+- tar -xzvf 1.2.0.tar.gz
 - cd kafkacat-1.2.0 && ./configure --prefix=/usr && make && sudo make install
 - echo "test message" | kafkacat -P -b 127.0.0.1:9092  -t test
 - kafkacat -C -b 127.0.0.1:9092  -t test -p 0 -c 1
