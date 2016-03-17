@@ -31,3 +31,5 @@ lib*.pc
 /Release/
 /tmp_install/
 /lib/
+
+newname.sh
