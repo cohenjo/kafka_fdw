@@ -11,7 +11,10 @@ before_install:
 - docker pull spotify/kafka
 - docker run -d -p 2181:2181 -p 9092:9092 --env ADVERTISED_HOST=127.0.0.1 --env ADVERTISED_PORT=9092 spotify/kafka
 - docker ps -a
-- sudo apt-get install -qq librdkafka1 kafkacat
+- sudo apt-get install -qq librdkafka1 librdkafka-dev libyajl-dev
+- wget https://github.com/edenhill/kafkacat/archive/1.2.0.tar.gz
+- tar -xzvf 1.2.0
+- cd kafkacat-1.2.0 && ./configure --prefix=/usr && make && sudo make install
 - echo "test message" | kafkacat -P -b 127.0.0.1:9092  -t test
 - kafkacat -C -b 127.0.0.1:9092  -t test -p 0 -c 1
 
