@@ -1,6 +1,8 @@
 # Kafka Foreign Data Wrapper for PostgreSQL
 Copyright (c) 2015, Jony Vesterman Cohen.
 
+[![Build Status](https://travis-ci.org/cohenjo/kafka_fdw.svg?branch=master)](https://travis-ci.org/cohenjo/kafka_fdw)
+
 The Kafka Foreign Data Wrapper (FDW) for PostgreSQL allows to consume and produce KAFKA messages as PostgreSQL tables.
 
 kafka topic == foreign table.
@@ -18,3 +20,7 @@ This FDW allows:
 
 
 CSV format - limitation: must end with ','
+
+TODO List:
+  1. consider moving to : rd_kafka_consume_callback for higher throughput
+  2. look at: https://github.com/edenhill/librdkafka/blob/master/examples/rdkafka_performance.c from line 1180
