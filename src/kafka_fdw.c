@@ -443,7 +443,7 @@ kafka_fdw_validator(PG_FUNCTION_ARGS)
 								));
 
 			svr_address = strVal(def->arg);
-      elog(DEBUG1,"%s: Got server: %s",__func__,svr_address);
+      //elog(DEBUG1,"%s: Got server: %s",__func__,svr_address);
 		}
 		else if (strcmp(def->defname, "port") == 0)
 		{
@@ -458,7 +458,7 @@ kafka_fdw_validator(PG_FUNCTION_ARGS)
       //NodeSetTag(def->arg,T_Integer); // what am I missing?!? why do I need this??
 			svr_port = strtol(strVal(def->arg),NULL,10); // should I use defGetInt32	??
       //svr_port = defGetInt32(def);
-      elog(DEBUG1,"%s: Got port number: %d",__func__,svr_port);
+      //elog(DEBUG1,"%s: Got port number: %d",__func__,svr_port);
 		}
 		if (strcmp(def->defname, "password") == 0)
 		{
@@ -772,7 +772,7 @@ kafkaBeginForeignScan(ForeignScanState *node,
   kafkaFdwExecutionState *festate;
   rd_kafka_message_t **rkmessages = NULL;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	//elog(DEBUG1, "entering function %s", __func__);
   start_offset = RD_KAFKA_OFFSET_BEGINNING;
 
   /* Topic configuration */
@@ -782,17 +782,17 @@ kafkaBeginForeignScan(ForeignScanState *node,
   conf = rd_kafka_conf_new();
 
   /* Fetch options  */
-  elog(DEBUG1, "%s: getting options", __func__);
+  //elog(DEBUG1, "%s: getting options", __func__);
 	kafkaGetOptions(RelationGetRelid(node->ss.ss_currentRelation),
 					&table_options);
   topic = table_options.topic;
 
-  elog(DEBUG1, "%s: broker string, %s:%d", __func__,table_options.address,table_options.port);
+  //elog(DEBUG1, "%s: broker string, %s:%d", __func__,table_options.address,table_options.port);
   initStringInfo(&broker_str);
   appendStringInfo(&broker_str,"%s:%d",table_options.address,table_options.port);
   brokers = broker_str.data;
 
-  elog(DEBUG1, "%s: setting up configuration", __func__);
+  //elog(DEBUG1, "%s: setting up configuration", __func__);
   rd_kafka_conf_set(conf, "queued.min.messages", "1000000", NULL, 0); // bring back to 1M
 	/* Create Kafka handle */
 		if (!(rk = rd_kafka_new(RD_KAFKA_CONSUMER, conf,
@@ -812,15 +812,15 @@ kafkaBeginForeignScan(ForeignScanState *node,
                errdetail("fdw:772.")));
 		}
 
-    elog(DEBUG1, "%s: creating the topic: %s", __func__, topic);
+    //elog(DEBUG1, "%s: creating the topic: %s", __func__, topic);
 		/* Create topic */
 		rkt = rd_kafka_topic_new(rk, topic, topic_conf);
 
-    if(rkt==NULL){
-      elog(DEBUG1, "%s: rkt is null", __func__);
-    }else{
-      elog(DEBUG1, "%s: rkt topic is: %s", __func__, rd_kafka_topic_name (rkt));
-    }
+    // if(rkt==NULL){
+    //   elog(DEBUG1, "%s: rkt is null", __func__);
+    // }else{
+    //   elog(DEBUG1, "%s: rkt topic is: %s", __func__, rd_kafka_topic_name (rkt));
+    // }
 
     if (rd_kafka_consume_start(rkt, partition, start_offset) == -1){
 
@@ -924,16 +924,16 @@ elog(DEBUG1, "%s: table options: partition: %d,timeout: %d ", __func__,partition
 	 */
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	// elog(DEBUG1, "entering function %s", __func__);
 
   elog(DEBUG1, "%s: clearing slot ", __func__);
   ExecClearTuple(slot);
 
-  if(rkt==NULL){
-    elog(DEBUG1, "%s: rkt is null", __func__);
-  }else{
-    elog(DEBUG1, "%s: rkt topic is: %s", __func__, rd_kafka_topic_name (rkt));
-  }
+  // if(rkt==NULL){
+  //   elog(DEBUG1, "%s: rkt is null", __func__);
+  // }else{
+  //   elog(DEBUG1, "%s: rkt topic is: %s", __func__, rd_kafka_topic_name (rkt));
+  // }
 
 
 	/* Start consuming */
@@ -1020,7 +1020,7 @@ while (run ) {
 
       values = (char **) palloc(sizeof(char *) * attinmeta->tupdesc->natts);
       // cols = (char *)rkmessages[k]->payload;
-      tofree = cols = strdup((char *)rkmessages[k]->payload);
+      tofree = cols = strndup((char *)rkmessages[k]->payload,rkmessages[k]->len);
       // assert(cols != NULL);
       // col = strsep(cols, ",");
 
