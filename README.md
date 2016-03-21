@@ -16,7 +16,7 @@ librdkafka is licensed under the 2-clause BSD license.
 This FDW allows:
 1. importing topics as foreign tables (by imort schema)
 2. consuming topics using select statments.
-3. producing  using insert statments.
+3. producing using insert statments.
 
 
 CSV format - limitation: must end with ','

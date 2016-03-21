@@ -1,5 +1,9 @@
 #!/bin/bash
 
+
+
+bin/kafka-console-producer.sh --zookeeper localhost:2181 --topic test 
+
 # 1. Create ProgressBar function
 # 1.1 Input is currentState($1) and totalState($2)
 function ProgressBar {
@@ -25,7 +29,7 @@ _start=1
 _end=10000000
 
 # Proof of concept
-for number in $(seq ${_start} ${_end}) 
+for number in $(seq ${_start} ${_end})
 do
     echo "new_test message_${number}" | kafkacat -P -b $KAFKA  -t test
     ProgressBar ${number} ${_end}

@@ -177,7 +177,7 @@ static List *kafkaImportForeignSchema(ImportForeignSchemaStmt *stmt,
  *
  */
  static rd_kafka_t *rk;
-
+ static rd_kafka_t *global_rk;
 /*
  * Describes the valid options for objects that use this wrapper.
  */
@@ -306,7 +306,7 @@ static void kafkaGetOptions(Oid foreigntableid, kafkaTableOptions *options);
 // static void check_reply(rd_kafka_message_t *reply, kafkaContext *context,
 // 						int error_code, char *message, char *arg);
 static void metadata_print (const char *topic, const struct rd_kafka_metadata *metadata);
-
+static char *flatten_tup(TupleTableSlot *slot, int *msglen);
 
 
 Datum
@@ -1202,8 +1202,101 @@ kafkaBeginForeignModify(ModifyTableState *mtstate,
 	 * If the BeginForeignModify pointer is set to NULL, no action is taken
 	 * during executor startup.
 	 */
+   rd_kafka_topic_t *rkt;
+  StringInfoData broker_str;
+   char *brokers = "192.168.99.100:9092";
+   char mode = 'C';
+   char *topic = NULL;
+   int partition = 0;// RD_KAFKA_PARTITION_UA;
+   int opt;
+   rd_kafka_conf_t *conf;
+   rd_kafka_topic_conf_t *topic_conf;
+   char errstr[512];
+   const char *debug = NULL;
+   int64_t start_offset = 0;
+  int report_offsets = 0;
+   int do_conf_dump = 0;
+   char tmp[16];
+  int batch_size = 1000;
+  kafkaTableOptions table_options;
+  kafkaFdwExecutionState *festate;
+  rd_kafka_message_t **rkmessages = NULL;
+
+ //elog(DEBUG1, "entering function %s", __func__);
+  start_offset = RD_KAFKA_OFFSET_BEGINNING;
+
+  /* Topic configuration */
+  topic_conf = rd_kafka_topic_conf_new();
+
+  /* Kafka configuration */
+  conf = rd_kafka_conf_new();
+
+  /* Producer config */
+  rd_kafka_conf_set(conf, "queue.buffering.max.messages", "500000",
+        NULL, 0);
+  rd_kafka_conf_set(conf, "message.send.max.retries", "3", NULL, 0);
+  rd_kafka_conf_set(conf, "retry.backoff.ms", "500", NULL, 0);
+
+  /* Fetch options  */
+  //elog(DEBUG1, "%s: getting options", __func__);
+ kafkaGetOptions(RelationGetRelid(rinfo->ri_RelationDesc),
+         &table_options);
+  topic = table_options.topic;
+
+  elog(DEBUG1, "%s: broker string, %s:%d", __func__,table_options.address,table_options.port);
+  initStringInfo(&broker_str);
+  appendStringInfo(&broker_str,"%s:%d",table_options.address,table_options.port);
+  brokers = broker_str.data;
 
 	elog(DEBUG1, "entering function %s", __func__);
+
+
+  /* Create Kafka handle */
+		if (!(rk = rd_kafka_new(RD_KAFKA_PRODUCER, conf,
+					errstr, sizeof(errstr)))) {
+            ereport(ERROR,
+                (errno,
+                 errmsg("%% Failed to createKafka producer: %s\n",errstr),
+                     errdetail("kafka_fdw:1260.")));
+		}
+
+    elog(DEBUG1, "%s: setting up brokers: %s", __func__, brokers);
+		/* Add brokers */
+		if (rd_kafka_brokers_add(rk, brokers) < 1) {
+      ereport(ERROR,
+          (errno,
+           errmsg("%% No valid brokers specified\n"),
+               errdetail("fdw:772.")));
+		}
+
+    //elog(DEBUG1, "%s: creating the topic: %s", __func__, topic);
+		/* Create topic */
+		rkt = rd_kafka_topic_new(rk, topic, topic_conf);
+
+
+
+  /* Stash away the state info we have already */
+  festate = (kafkaFdwExecutionState *) palloc(sizeof(kafkaFdwExecutionState));
+  rinfo->ri_FdwState = (void *) festate;
+
+  festate->context = rkt;
+  festate->reply = NULL;
+  festate->row = 0;
+  festate->address = table_options.address;
+  festate->port = table_options.port;
+  festate->keyprefix = table_options.keyprefix;
+  festate->keyset = table_options.keyset;
+  festate->singleton_key = table_options.singleton_key;
+  festate->timeout = table_options.timeout;
+  festate->partition = table_options.partition;
+  festate->table_type = table_options.table_type;
+  festate->cursor_id = NULL;
+  festate->cursor_search_string = NULL;
+  festate->messages = rkmessages;
+  festate->curr_message = 0;
+  festate->max_message = -1;
+
+  elog(DEBUG2, "%s: DONE.", __func__);
 
 }
 
@@ -1241,7 +1334,107 @@ kafkaExecForeignInsert(EState *estate,
 	 *
 	 */
 
-	elog(DEBUG1, "entering function %s", __func__);
+   rd_kafka_topic_t *rkt;
+
+   int rows;
+   int ret;
+   char *sbuf;
+   char *key = NULL;
+   int outq;
+   int keylen = 0;
+   int msgsize = 0;
+   off_t rof = 0;
+   char errstr[512];
+   int sendflags = 0;
+   int partition = 0; //partitions ? partitions[0] : RD_KAFKA_PARTITION_UA;
+
+   elog(DEBUG1, "%s: execute foreign table insert.", __func__);
+
+   kafkaFdwExecutionState *festate = (kafkaFdwExecutionState *) rinfo->ri_FdwState;
+   MemoryContext oldcontext;
+
+   rkt = festate->context;
+
+	 elog(DEBUG1, "%s: execute foreign table insert on %d", __func__, RelationGetRelid(rinfo->ri_RelationDesc));
+   sbuf = flatten_tup(slot,&msgsize);
+   elog(DEBUG1,"%s: slot values to send: (%s)",__func__,sbuf);
+   elog(DEBUG1,"%s: slot length to send: (%d)",__func__,msgsize);
+
+
+   /* Force duplication of payload */
+   sendflags |= RD_KAFKA_MSG_F_COPY;
+
+   rd_kafka_poll(rk, 1000);
+
+
+     ret = rd_kafka_produce(rkt, partition,
+           sendflags, sbuf, msgsize,
+           key, keylen, NULL);
+     elog(DEBUG1, "%s: produce returned: %d",__func__, ret);
+     if (ret !=0 )
+     {
+       if (errno == ESRCH)
+         ereport(ERROR,
+                  (errno,
+                   errmsg("%% No such partition:" "%"PRId32"\n", partition),
+                       errdetail("kafka_fdw:1458.")));
+       else if (errno != ENOBUFS )
+         ereport(ERROR,
+                (errno,
+                 errmsg("%% produce error: %s%s\n",
+                        rd_kafka_err2str(
+                          rd_kafka_errno2err(
+                            errno)),
+                        errno == ENOBUFS ?
+                        " (backpressure)":"")));
+
+    }
+  //      /* Poll to handle delivery reports */
+  //      rd_kafka_poll(rk, 10);
+   //
+  //                              print_stats(rk, mode, otype, compression);
+  //    }
+   //
+  //    msgs_wait_cnt++;
+  //    cnt.msgs++;
+  //    cnt.bytes += msgsize;
+   //
+  //                      if (rate_sleep)
+  //                              usleep(rate_sleep);
+   //
+
+  //  cnt.msgs -= outq;
+  //  cnt.bytes -= msgsize * outq;
+   //
+  //  cnt.t_end = t_end;
+//##############################################################
+  // 	++fdw_state->rowcount;
+  // 	dml_in_transaction = true;
+
+	// MemoryContextReset(festate->temp_cxt);
+	// oldcontext = MemoryContextSwitchTo(festate->temp_cxt);
+  //
+  // 	/* extract the values from the slot and store them in the parameters */
+  // 	setModifyParameters(fdw_state->paramList, slot, planSlot, fdw_state->oraTable, fdw_state->session);
+  //
+  // 	/* execute the INSERT statement and store RETURNING values in oraTable's columns */
+  // 	rows = oracleExecuteQuery(fdw_state->session, fdw_state->oraTable, fdw_state->paramList);
+  //
+  // 	if (rows != 1)
+  // 		ereport(ERROR,
+  // 				(errcode(ERRCODE_FDW_UNABLE_TO_CREATE_EXECUTION),
+  // 				errmsg("INSERT on Oracle table added %d rows instead of one in iteration %lu", rows, fdw_state->rowcount)));
+  //
+	// MemoryContextSwitchTo(oldcontext);
+
+	/* empty the result slot */
+	// ExecClearTuple(slot);
+
+	/* convert result for RETURNING to arrays of values and null indicators */
+	// convertTuple(festate, slot->tts_values, slot->tts_isnull, false);
+
+	/* store the virtual tuple */
+	ExecStoreVirtualTuple(slot);
 
 	return slot;
 }
@@ -1334,8 +1527,30 @@ kafkaEndForeignModify(EState *estate,
 	 * If the EndForeignModify pointer is set to NULL, no action is taken
 	 * during executor shutdown.
 	 */
+   	int outq;
+  rd_kafka_topic_t *rkt;
+  kafkaFdwExecutionState *festate = (kafkaFdwExecutionState *) rinfo->ri_FdwState;
+  rkt = festate->context;
 
-	elog(DEBUG1, "entering function %s", __func__);
+ elog(DEBUG1, "%s: entering function ", __func__);
+
+ /* Must poll to handle delivery reports */
+ rd_kafka_poll(rk, 0);
+ /* Wait for messages to be delivered */
+ rd_kafka_poll(rk, 1000);
+ outq = rd_kafka_outq_len(rk);
+ elog(DEBUG2,"%s: %i messages in outq\n", __func__,outq) ;
+ //  outq = rd_kafka_outq_len(rk);
+ //              if (verbosity >= 2)
+ //                      printf("%% %i messages in outq\n", outq);
+
+ /* Destroy topic */
+ rd_kafka_topic_destroy(rkt);
+
+ /* Destroy handle */
+ rd_kafka_destroy(rk);
+
+ elog(DEBUG1, "%s: DONE ", __func__);
 
 }
 
@@ -1931,3 +2146,44 @@ static void metadata_print (const char *topic,
                 }
         }
 }
+
+static char *flatten_tup(TupleTableSlot *slot, int *msglen)
+ {
+   TupleDesc   typeinfo = slot->tts_tupleDescriptor;
+   int         natts = typeinfo->natts;
+   int         i;
+   Datum       attr;
+   char       *value;
+   char       *string;
+   bool        isnull;
+   Oid         typoutput;
+   bool        typisvarlena;
+   StringInfo  buf;
+   /* Create workspace for strings */
+   buf = makeStringInfo();
+
+   /* code */
+   i=0;
+   attr = slot_getattr(slot, i + 1, &isnull);
+   if (!isnull){
+   getTypeOutputInfo(typeinfo->attrs[i]->atttypid,
+   &typoutput, &typisvarlena);
+   value = OidOutputFunctionCall(typoutput, attr);
+   //printatt((unsigned) i + 1, typeinfo->attrs[i], value);
+   appendStringInfo(buf,"%s",value);
+    }
+
+   for (i = 1; i < natts; ++i)
+   {
+     attr = slot_getattr(slot, i + 1, &isnull);
+     if (isnull)
+       continue;
+     getTypeOutputInfo(typeinfo->attrs[i]->atttypid,
+     &typoutput, &typisvarlena);
+     value = OidOutputFunctionCall(typoutput, attr);
+     //printatt((unsigned) i + 1, typeinfo->attrs[i], value);
+     appendStringInfo(buf,",%s",value);
+   }
+   *msglen = buf->len;
+   return buf->data;
+ }
