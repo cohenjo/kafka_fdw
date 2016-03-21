@@ -305,7 +305,7 @@ static void kafkaGetOptions(Oid foreigntableid, kafkaTableOptions *options);
 // static char *process_kafka_array(kafkaReply *reply, kafka_table_type type);
 // static void check_reply(rd_kafka_message_t *reply, kafkaContext *context,
 // 						int error_code, char *message, char *arg);
-static void metadata_print (const char *topic, const struct rd_kafka_metadata *metadata);
+// static void metadata_print (const char *topic, const struct rd_kafka_metadata *metadata);
 static char *flatten_tup(TupleTableSlot *slot, int *msglen);
 
 
@@ -2089,63 +2089,63 @@ kafkaIsValidOption(const char *option, Oid context)
 }
 
 
-static void metadata_print (const char *topic,
-                            const struct rd_kafka_metadata *metadata) {
-        int i, j, k;
-
-        printf("Metadata for %s (from broker %"PRId32": %s):\n",
-               topic ? : "all topics",
-               metadata->orig_broker_id,
-               metadata->orig_broker_name);
-
-
-        /* Iterate brokers */
-        printf(" %i brokers:\n", metadata->broker_cnt);
-        for (i = 0 ; i < metadata->broker_cnt ; i++)
-                printf("  broker %"PRId32" at %s:%i\n",
-                       metadata->brokers[i].id,
-                       metadata->brokers[i].host,
-                       metadata->brokers[i].port);
-
-        /* Iterate topics */
-        printf(" %i topics:\n", metadata->topic_cnt);
-        for (i = 0 ; i < metadata->topic_cnt ; i++) {
-                const struct rd_kafka_metadata_topic *t = &metadata->topics[i];
-                printf("  topic \"%s\" with %i partitions:",
-                       t->topic,
-                       t->partition_cnt);
-                if (t->err) {
-                        printf(" %s", rd_kafka_err2str(t->err));
-                        if (t->err == RD_KAFKA_RESP_ERR_LEADER_NOT_AVAILABLE)
-                                printf(" (try again)");
-                }
-                printf("\n");
-
-                /* Iterate topic's partitions */
-                for (j = 0 ; j < t->partition_cnt ; j++) {
-                        const struct rd_kafka_metadata_partition *p;
-                        p = &t->partitions[j];
-                        printf("    partition %"PRId32", "
-                               "leader %"PRId32", replicas: ",
-                               p->id, p->leader);
-
-                        /* Iterate partition's replicas */
-                        for (k = 0 ; k < p->replica_cnt ; k++)
-                                printf("%s%"PRId32,
-                                       k > 0 ? ",":"", p->replicas[k]);
-
-                        /* Iterate partition's ISRs */
-                        printf(", isrs: ");
-                        for (k = 0 ; k < p->isr_cnt ; k++)
-                                printf("%s%"PRId32,
-                                       k > 0 ? ",":"", p->isrs[k]);
-                        if (p->err)
-                                printf(", %s\n", rd_kafka_err2str(p->err));
-                        else
-                                printf("\n");
-                }
-        }
-}
+// static void metadata_print (const char *topic,
+//                             const struct rd_kafka_metadata *metadata) {
+//         int i, j, k;
+//
+//         printf("Metadata for %s (from broker %"PRId32": %s):\n",
+//                topic ? : "all topics",
+//                metadata->orig_broker_id,
+//                metadata->orig_broker_name);
+//
+//
+//         /* Iterate brokers */
+//         printf(" %i brokers:\n", metadata->broker_cnt);
+//         for (i = 0 ; i < metadata->broker_cnt ; i++)
+//                 printf("  broker %"PRId32" at %s:%i\n",
+//                        metadata->brokers[i].id,
+//                        metadata->brokers[i].host,
+//                        metadata->brokers[i].port);
+//
+//         /* Iterate topics */
+//         printf(" %i topics:\n", metadata->topic_cnt);
+//         for (i = 0 ; i < metadata->topic_cnt ; i++) {
+//                 const struct rd_kafka_metadata_topic *t = &metadata->topics[i];
+//                 printf("  topic \"%s\" with %i partitions:",
+//                        t->topic,
+//                        t->partition_cnt);
+//                 if (t->err) {
+//                         printf(" %s", rd_kafka_err2str(t->err));
+//                         if (t->err == RD_KAFKA_RESP_ERR_LEADER_NOT_AVAILABLE)
+//                                 printf(" (try again)");
+//                 }
+//                 printf("\n");
+//
+//                 /* Iterate topic's partitions */
+//                 for (j = 0 ; j < t->partition_cnt ; j++) {
+//                         const struct rd_kafka_metadata_partition *p;
+//                         p = &t->partitions[j];
+//                         printf("    partition %"PRId32", "
+//                                "leader %"PRId32", replicas: ",
+//                                p->id, p->leader);
+//
+//                         /* Iterate partition's replicas */
+//                         for (k = 0 ; k < p->replica_cnt ; k++)
+//                                 printf("%s%"PRId32,
+//                                        k > 0 ? ",":"", p->replicas[k]);
+//
+//                         /* Iterate partition's ISRs */
+//                         printf(", isrs: ");
+//                         for (k = 0 ; k < p->isr_cnt ; k++)
+//                                 printf("%s%"PRId32,
+//                                        k > 0 ? ",":"", p->isrs[k]);
+//                         if (p->err)
+//                                 printf(", %s\n", rd_kafka_err2str(p->err));
+//                         else
+//                                 printf("\n");
+//                 }
+//         }
+// }
 
 static char *flatten_tup(TupleTableSlot *slot, int *msglen)
  {
