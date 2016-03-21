@@ -5,22 +5,28 @@ dist: trusty
 
 services:
   - docker
-  - postgresql
+
+
+before_install:
+
+env:
+  global:
+  - USE_PGXS=1
+  - PGVERSION=9.5
 
 before_install:
 - docker pull spotify/kafka
 - docker run -d -p 2181:2181 -p 9092:9092 --env ADVERTISED_HOST=127.0.0.1 --env ADVERTISED_PORT=9092 spotify/kafka
 - docker ps -a
-# - sudo apt-get install -qq librdkafka1
+- wget https://gist.github.com/petere/5893799/raw/apt.postgresql.org.sh
+- wget https://gist.github.com/petere/6023944/raw/pg-travis-test.sh
+- sudo sh ./apt.postgresql.org.sh
 - sudo apt-get install -qq librdkafka1 librdkafka-dev libyajl-dev
 
 
-script: make -e USE_PGXS=1 && make -e USE_PGXS=1 install && make installcheck
+script: bash ./pg-travis-test.sh
+
 
 compiler:
   - clang
   - gcc
-
-env:
-  global:
-  - USE_PGXS=1
