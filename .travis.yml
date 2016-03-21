@@ -19,7 +19,7 @@ before_install:
 - docker run -d -p 2181:2181 -p 9092:9092 --env ADVERTISED_HOST=127.0.0.1 --env ADVERTISED_PORT=9092 spotify/kafka
 - docker ps -a
 - wget https://gist.github.com/petere/5893799/raw/apt.postgresql.org.sh
-- wget https://gist.github.com/petere/6023944/raw/pg-travis-test.sh
+- wget https://gist.githubusercontent.com/cohenjo/b87c27cc7ad079839a10/raw/0919ad051a2c3158350234db45abbc92253491a9/pg-travis-test.sh
 - sudo sh ./apt.postgresql.org.sh
 - sudo apt-get install -qq librdkafka1 librdkafka-dev libyajl-dev
 
