@@ -4,8 +4,8 @@ CREATE EXTENSION IF NOT EXISTS kafka_fdw;
 
 CREATE SERVER kafka_server
 FOREIGN DATA WRAPPER kafka_fdw
--- OPTIONS (address '127.0.0.1', port '9092');
-OPTIONS (address '192.168.99.100', port '9092');
+OPTIONS (address '127.0.0.1', port '9092');
+-- OPTIONS (address '192.168.99.100', port '9092');
 
 CREATE USER MAPPING FOR PUBLIC
 SERVER kafka_server;
