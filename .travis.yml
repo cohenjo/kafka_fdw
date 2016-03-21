@@ -15,7 +15,7 @@ before_install:
 - sudo apt-get install -qq librdkafka1 librdkafka-dev libyajl-dev
 
 
-script: make && make installcheck
+script: make -e USE_PGXS=1 && make -e USE_PGXS=1 install && make installcheck
 
 compiler:
   - clang
