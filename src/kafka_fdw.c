@@ -1877,7 +1877,7 @@ kafkaImportForeignSchema(ImportForeignSchemaStmt *stmt,
                         rkt = NULL;
 
                 while (run) {
-                        const struct rd_kafka_metadata *metadata;
+                        rd_kafka_metadata_t *metadata;
 
                         /* Fetch metadata */
                         elog(DEBUG1, "%s: Fetch metadata\n ", __func__);
@@ -1895,7 +1895,7 @@ kafkaImportForeignSchema(ImportForeignSchemaStmt *stmt,
 
                         //
                         for (i = 0 ; i < metadata->topic_cnt ; i++) {
-                                const struct rd_kafka_metadata_topic *t = &metadata->topics[i];
+                                rd_kafka_metadata_topic_t *t = &metadata->topics[i];
                         //         printf("  topic \"%s\" with %i partitions:",
                         //                t->topic,
                         //                t->partition_cnt);
