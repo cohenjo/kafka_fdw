@@ -21,6 +21,11 @@ This FDW allows:
 
 CSV format - limitation: must end with ','
 
+table options allows to control the offset by setting offset to be one of 2 options:
+ - beginning: RD_KAFKA_OFFSET_BEGINNING
+ - stored: RD_KAFKA_OFFSET_STORED
+
+
 TODO List:
   1. consider moving to : rd_kafka_consume_callback for higher throughput
   2. look at: https://github.com/edenhill/librdkafka/blob/master/examples/rdkafka_performance.c from line 1180

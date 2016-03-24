@@ -12,7 +12,7 @@ SERVER kafka_server;
 
 
 CREATE FOREIGN TABLE kafka_test_0 (message text, len int, offs int)
-SERVER kafka_server OPTIONS (topic 'test', timeout '100', partition '0');
+SERVER kafka_server OPTIONS (topic 'test', timeout '100', partition '0', offset 'stored');
 
 
 IMPORT FOREIGN SCHEMA test FROM SERVER kafka_server INTO test;

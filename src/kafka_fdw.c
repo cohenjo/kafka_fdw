@@ -195,7 +195,7 @@ static struct KafkaFdwOption valid_options[] =
 	{"port", ForeignServerRelationId},
 
 	/* table options */
-	{"singleton_key", ForeignTableRelationId},
+	{"offset", ForeignTableRelationId},
   {"topic", ForeignTableRelationId},
 	{"tablekeyprefix", ForeignTableRelationId},
 	{"tablekeyset", ForeignTableRelationId},
@@ -222,7 +222,7 @@ typedef struct kafkaTableOptions
 	int			partition;
 	char	   *keyprefix;
 	char	   *keyset;
-	char	   *singleton_key;
+	int    offset;
 	kafka_table_type table_type;
 } kafkaTableOptions;
 
@@ -258,7 +258,7 @@ typedef struct kafkaFdwExecutionState
 	char	   *keyprefix;
 	char	   *keyset;
 	char	   *qual_value;
-	char	   *singleton_key;
+	int	  offset;
   int     timeout;
 	kafka_table_type table_type;
 	char	   *cursor_search_string;
@@ -755,10 +755,10 @@ kafkaBeginForeignScan(ForeignScanState *node,
    rd_kafka_topic_t *rkt;
   StringInfoData broker_str;
  	char *brokers = "localhost:9092";
- 	char mode = 'C';
  	char *topic = NULL;
  	int partition = 0;// RD_KAFKA_PARTITION_UA;
  	int opt;
+  int res;
  	rd_kafka_conf_t *conf;
  	rd_kafka_topic_conf_t *topic_conf;
  	char errstr[512];
@@ -774,7 +774,7 @@ kafkaBeginForeignScan(ForeignScanState *node,
 
 	//elog(DEBUG1, "entering function %s", __func__);
   start_offset = RD_KAFKA_OFFSET_BEGINNING;
-
+  //start_offset = RD_KAFKA_OFFSET_STORED
   /* Topic configuration */
   topic_conf = rd_kafka_topic_conf_new();
 
@@ -786,6 +786,7 @@ kafkaBeginForeignScan(ForeignScanState *node,
 	kafkaGetOptions(RelationGetRelid(node->ss.ss_currentRelation),
 					&table_options);
   topic = table_options.topic;
+  start_offset = table_options.offset;
 
   //elog(DEBUG1, "%s: broker string, %s:%d", __func__,table_options.address,table_options.port);
   initStringInfo(&broker_str);
@@ -793,7 +794,17 @@ kafkaBeginForeignScan(ForeignScanState *node,
   brokers = broker_str.data;
 
   //elog(DEBUG1, "%s: setting up configuration", __func__);
-  rd_kafka_conf_set(conf, "queued.min.messages", "1000000", NULL, 0); // bring back to 1M
+  if (rd_kafka_conf_set(conf, "group.id","kafka_fdw",NULL,0) != RD_KAFKA_CONF_OK)
+    ereport(ERROR,
+      (errno,
+       errmsg("%s: Failed to configure group id: %s\n",__func__,errstr),
+           errdetail("kafka_fdw:800.")));
+  ; // bring back to 1M
+  if (rd_kafka_conf_set(conf, "queued.min.messages", "1000000", NULL, 0) != RD_KAFKA_CONF_OK)
+    ereport(ERROR,
+      (errno,
+       errmsg("%s: Failed to configure queued.min.messages: %s\n",__func__,errstr),
+           errdetail("kafka_fdw:805.")));
 	/* Create Kafka handle */
 		if (!(rk = rd_kafka_new(RD_KAFKA_CONSUMER, conf,
 					errstr, sizeof(errstr)))) {
@@ -845,7 +856,7 @@ kafkaBeginForeignScan(ForeignScanState *node,
 	festate->port = table_options.port;
 	festate->keyprefix = table_options.keyprefix;
 	festate->keyset = table_options.keyset;
-	festate->singleton_key = table_options.singleton_key;
+	festate->offset = table_options.offset;
   festate->timeout = table_options.timeout;
   festate->partition = table_options.partition;
 	festate->table_type = table_options.table_type;
@@ -1286,7 +1297,7 @@ kafkaBeginForeignModify(ModifyTableState *mtstate,
   festate->port = table_options.port;
   festate->keyprefix = table_options.keyprefix;
   festate->keyset = table_options.keyset;
-  festate->singleton_key = table_options.singleton_key;
+  festate->offset = table_options.offset;
   festate->timeout = table_options.timeout;
   festate->partition = table_options.partition;
   festate->table_type = table_options.table_type;
@@ -2002,6 +2013,10 @@ kafkaGetOptions(Oid foreigntableid, kafkaTableOptions *table_options)
 	options = list_concat(options, server->options);
 	options = list_concat(options, mapping->options);
 
+  elog(DEBUG1, "%s: Default",__func__);
+  /* Defaults */
+  table_options->offset = RD_KAFKA_OFFSET_BEGINNING;
+
 	/* Loop through the options, and get the server/port */
 	foreach(lc, options)
 	{
@@ -2028,8 +2043,20 @@ kafkaGetOptions(Oid foreigntableid, kafkaTableOptions *table_options)
 		if (strcmp(def->defname, "tablekeyset") == 0)
 			table_options->keyset = defGetString(def);
 
-		if (strcmp(def->defname, "singleton_key") == 0)
-			table_options->singleton_key = defGetString(def);
+		if (strcmp(def->defname, "offset") == 0)
+    {
+      char	   *typeval = strVal(def->arg);
+      // elog(DEBUG1, "%s: offset: %s",__func__,typeval);
+      if (strcmp(typeval, "stored") == 0){
+        // elog(DEBUG1, "%s: offset atored",__func__);
+				table_options->offset = RD_KAFKA_OFFSET_STORED;
+      }
+			else if (strcmp(typeval, "beginning") == 0){
+        // elog(DEBUG1, "%s: offset beginning",__func__);
+				table_options->offset = RD_KAFKA_OFFSET_BEGINNING;
+      }
+			//table_options->offset = defGetString(def);
+    }
 
 		if (strcmp(def->defname, "tabletype") == 0)
 		{
