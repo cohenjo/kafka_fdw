@@ -29,3 +29,6 @@ table options allows to control the offset by setting offset to be one of 2 opti
 TODO List:
   1. consider moving to : rd_kafka_consume_callback for higher throughput
   2. look at: https://github.com/edenhill/librdkafka/blob/master/examples/rdkafka_performance.c from line 1180
+  3. move the topic and kafka client to sheared state to reduce initialization time.
+  4. allow for costume message decoders/encoders
+  5. completly map topic configuration with table options.

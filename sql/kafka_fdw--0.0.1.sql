@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- *                kafka foreign-data wrapper 
+ *                kafka foreign-data wrapper
  *
  * Copyright (c) 2013, PostgreSQL Global Development Group
  *

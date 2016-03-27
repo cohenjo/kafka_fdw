@@ -177,7 +177,9 @@ static List *kafkaImportForeignSchema(ImportForeignSchemaStmt *stmt,
  *
  */
  static rd_kafka_t *rk;
- static rd_kafka_t *global_rk;
+ static rd_kafka_t *rkConsumer = NULL;
+ static rd_kafka_t *rkProducer = NULL;
+ // static rd_kafka_t *global_rk;
 /*
  * Describes the valid options for objects that use this wrapper.
  */
@@ -624,6 +626,25 @@ kafkaGetForeignRelSize(PlannerInfo *root,
 	baserel->fdw_private = (void *) fdw_private;
 
 	/* initialize required state in fdw_private */
+  // int64_t lo, hi;
+  //                       rd_kafka_resp_err_t err;
+  //
+	// 		/* Only query for hi&lo partition watermarks */
+  //
+	// 		if ((err = rd_kafka_query_watermark_offsets(
+	// 			     rk, topic, partition, &lo, &hi, 5000))) {
+	// 			fprintf(stderr, "%% query_watermark_offsets() "
+	// 				"failed: %s\n",
+	// 				rd_kafka_err2str(err));
+	// 			exit(1);
+	// 		}
+  //
+	// 		printf("%s [%d]: low - high offsets: "
+	// 		       "%"PRId64" - %"PRId64"\n",
+	// 		       topic, partition, lo, hi);
+  //
+	// 		rd_kafka_destroy(rk);
+	// 		exit(0);
 
 }
 
@@ -778,9 +799,6 @@ kafkaBeginForeignScan(ForeignScanState *node,
   /* Topic configuration */
   topic_conf = rd_kafka_topic_conf_new();
 
-  /* Kafka configuration */
-  conf = rd_kafka_conf_new();
-
   /* Fetch options  */
   //elog(DEBUG1, "%s: getting options", __func__);
 	kafkaGetOptions(RelationGetRelid(node->ss.ss_currentRelation),
@@ -793,20 +811,26 @@ kafkaBeginForeignScan(ForeignScanState *node,
   appendStringInfo(&broker_str,"%s:%d",table_options.address,table_options.port);
   brokers = broker_str.data;
 
-  //elog(DEBUG1, "%s: setting up configuration", __func__);
-  if (rd_kafka_conf_set(conf, "group.id","kafka_fdw",NULL,0) != RD_KAFKA_CONF_OK)
-    ereport(ERROR,
-      (errno,
-       errmsg("%s: Failed to configure group id: %s\n",__func__,errstr),
-           errdetail("kafka_fdw:800.")));
-  ; // bring back to 1M
-  if (rd_kafka_conf_set(conf, "queued.min.messages", "1000000", NULL, 0) != RD_KAFKA_CONF_OK)
-    ereport(ERROR,
-      (errno,
-       errmsg("%s: Failed to configure queued.min.messages: %s\n",__func__,errstr),
-           errdetail("kafka_fdw:805.")));
+
 	/* Create Kafka handle */
-		if (!(rk = rd_kafka_new(RD_KAFKA_CONSUMER, conf,
+  if(rkConsumer == NULL)
+  {
+    /* Kafka configuration */
+    conf = rd_kafka_conf_new();
+    elog(DEBUG1, "%s: setting up configuration", __func__);
+    if (rd_kafka_conf_set(conf, "group.id","kafka_fdw",NULL,0) != RD_KAFKA_CONF_OK)
+      ereport(ERROR,
+        (errno,
+         errmsg("%s: Failed to configure group id: %s\n",__func__,errstr),
+             errdetail("kafka_fdw:800.")));
+    ; // bring back to 1M
+    if (rd_kafka_conf_set(conf, "queued.min.messages", "1000000", NULL, 0) != RD_KAFKA_CONF_OK)
+      ereport(ERROR,
+        (errno,
+         errmsg("%s: Failed to configure queued.min.messages: %s\n",__func__,errstr),
+             errdetail("kafka_fdw:805.")));
+    elog(DEBUG1,"%s: Creating new consumer");
+    if (!(rkConsumer = rd_kafka_new(RD_KAFKA_CONSUMER, conf,
 					errstr, sizeof(errstr)))) {
             ereport(ERROR,
                 (errno,
@@ -815,17 +839,22 @@ kafkaBeginForeignScan(ForeignScanState *node,
 		}
 
     elog(DEBUG1, "%s: setting up brokers: %s", __func__, brokers);
-		/* Add brokers */
-		if (rd_kafka_brokers_add(rk, brokers) == 0) {
+    /* Add brokers */
+    if (rd_kafka_brokers_add(rkConsumer, brokers) == 0) {
       ereport(ERROR,
           (errno,
            errmsg("%% No valid brokers specified\n"),
                errdetail("fdw:772.")));
-		}
+    }
+  }
+  else
+  {
+    elog(DEBUG1,"%s: Using existing consumer",__func__);
+  }
 
     //elog(DEBUG1, "%s: creating the topic: %s", __func__, topic);
 		/* Create topic */
-		rkt = rd_kafka_topic_new(rk, topic, topic_conf);
+		rkt = rd_kafka_topic_new(rkConsumer, topic, topic_conf);
 
     // if(rkt==NULL){
     //   elog(DEBUG1, "%s: rkt is null", __func__);
@@ -943,7 +972,7 @@ elog(DEBUG1, "%s: table options: partition: %d,timeout: %d ", __func__,partition
   // if(rkt==NULL){
   //   elog(DEBUG1, "%s: rkt is null", __func__);
   // }else{
-  //   elog(DEBUG1, "%s: rkt topic is: %s", __func__, rd_kafka_topic_name (rkt));
+    elog(DEBUG1, "%s: rkt topic is: %s", __func__, rd_kafka_topic_name (rkt));
   // }
 
 
@@ -968,7 +997,7 @@ while (run ) {
     elog(DEBUG1, "%s: fetching more messages.", __func__);
     r = rd_kafka_consume_batch(rkt, partition, timeout, rkmessages, batch_size);
     if (r < 1){
-      elog(DEBUG1, "%s: damn r < 1.", __func__);
+      elog(DEBUG1, "%s: damn r < 1. r=%d", __func__,r);
       // if(r==0){
       //     elog(DEBUG1, "%s: didn't get anything, continue.", __func__);
       //     continue;
@@ -1079,6 +1108,12 @@ kafkaReScanForeignScan(ForeignScanState *node)
 
 	elog(DEBUG1, "entering function %s", __func__);
 
+  // call rd_kafka_resp_err_t rd_kafka_seek (rd_kafka_topic_t *rkt,
+  //                                    int32_t partition,
+  //                                    int64_t offset,
+  //                                    int timeout_ms);
+
+
 }
 
 
@@ -1106,7 +1141,8 @@ kafkaEndForeignScan(ForeignScanState *node)
   pfree(festate->messages);
 
 	/* Destroy handle */
-	rd_kafka_destroy(rk);
+	// rd_kafka_destroy(rkConsumer);
+  // rkConsumer = NULL;
 
 }
 
@@ -1261,28 +1297,35 @@ kafkaBeginForeignModify(ModifyTableState *mtstate,
 
 	elog(DEBUG1, "entering function %s", __func__);
 
+    if(rkProducer == NULL)
+    {
+      elog(DEBUG1, "%s: creating producer", __func__);
+      /* Create Kafka handle */
+      if (!(rkProducer = rd_kafka_new(RD_KAFKA_PRODUCER, conf,
+  					errstr, sizeof(errstr)))) {
+              ereport(ERROR,
+                  (errno,
+                   errmsg("%% Failed to createKafka producer: %s\n",errstr),
+                       errdetail("kafka_fdw:1260.")));
+  		}
 
-  /* Create Kafka handle */
-		if (!(rk = rd_kafka_new(RD_KAFKA_PRODUCER, conf,
-					errstr, sizeof(errstr)))) {
-            ereport(ERROR,
-                (errno,
-                 errmsg("%% Failed to createKafka producer: %s\n",errstr),
-                     errdetail("kafka_fdw:1260.")));
-		}
+      elog(DEBUG1, "%s: setting up brokers: %s", __func__, brokers);
+  		/* Add brokers */
+  		if (rd_kafka_brokers_add(rkProducer, brokers) < 1) {
+        ereport(ERROR,
+            (errno,
+             errmsg("%% No valid brokers specified\n"),
+                 errdetail("fdw:772.")));
+  		}
+    }
+    else
+    {
+      elog(DEBUG1, "%s: using existing producer", __func__);
+    }
 
-    elog(DEBUG1, "%s: setting up brokers: %s", __func__, brokers);
-		/* Add brokers */
-		if (rd_kafka_brokers_add(rk, brokers) < 1) {
-      ereport(ERROR,
-          (errno,
-           errmsg("%% No valid brokers specified\n"),
-               errdetail("fdw:772.")));
-		}
-
-    //elog(DEBUG1, "%s: creating the topic: %s", __func__, topic);
+    elog(DEBUG1, "%s: creating the topic: %s", __func__, topic);
 		/* Create topic */
-		rkt = rd_kafka_topic_new(rk, topic, topic_conf);
+		rkt = rd_kafka_topic_new(rkProducer, topic, topic_conf);
 
 
 
@@ -1375,7 +1418,7 @@ kafkaExecForeignInsert(EState *estate,
    /* Force duplication of payload */
    sendflags |= RD_KAFKA_MSG_F_COPY;
 
-   rd_kafka_poll(rk, 1000);
+  //  rd_kafka_poll(rk, 1000);
 
 
      ret = rd_kafka_produce(rkt, partition,
@@ -1400,8 +1443,8 @@ kafkaExecForeignInsert(EState *estate,
                         " (backpressure)":"")));
 
     }
-  //      /* Poll to handle delivery reports */
-  //      rd_kafka_poll(rk, 10);
+       /* Poll to handle delivery reports */
+       rd_kafka_poll(rkProducer, 0);
    //
   //                              print_stats(rk, mode, otype, compression);
   //    }
@@ -1546,20 +1589,19 @@ kafkaEndForeignModify(EState *estate,
  elog(DEBUG1, "%s: entering function ", __func__);
 
  /* Must poll to handle delivery reports */
- rd_kafka_poll(rk, 0);
- /* Wait for messages to be delivered */
- rd_kafka_poll(rk, 1000);
- outq = rd_kafka_outq_len(rk);
+ rd_kafka_poll(rkProducer, 100);
+ // /* Wait for messages to be delivered */
+ // rd_kafka_poll(rk, 1000);
+ outq = rd_kafka_outq_len(rkProducer);
  elog(DEBUG2,"%s: %i messages in outq\n", __func__,outq) ;
- //  outq = rd_kafka_outq_len(rk);
- //              if (verbosity >= 2)
- //                      printf("%% %i messages in outq\n", outq);
+// rd_kafka_poll(rkProducer, 0);
+
 
  /* Destroy topic */
  rd_kafka_topic_destroy(rkt);
 
  /* Destroy handle */
- rd_kafka_destroy(rk);
+ // rd_kafka_destroy(rk);
 
  elog(DEBUG1, "%s: DONE ", __func__);
 
